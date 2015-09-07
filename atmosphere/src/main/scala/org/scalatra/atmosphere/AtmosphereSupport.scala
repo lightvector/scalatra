@@ -143,7 +143,9 @@ trait AtmosphereSupport extends Initializable with Handler with CometProcessor w
     withRequestResponse(request, response) {
       val atmoRoute = atmosphereRoute(request)
       if (atmoRoute.isDefined) {
-        request(AtmosphereRouteKey) = atmoRoute.get
+        //In addition to the matched route, store self so that upon Atmosphere asynchronously calling back
+        //into us with requests and responses, we can set the dynamic scope before executing the matched route action.
+        request(AtmosphereRouteKey) = (atmoRoute.get, self)
         request.getSession(true) // force session creation
         if (request.get(FrameworkConfig.ATMOSPHERE_HANDLER_WRAPPER).isEmpty)
           atmosphereFramework.doCometSupport(AtmosphereRequest.wrap(request), AtmosphereResponse.wrap(response))
@@ -151,6 +153,12 @@ trait AtmosphereSupport extends Initializable with Handler with CometProcessor w
         super.handle(request, response)
       }
     }
+  }
+
+  //Renaming and exposing withRequestResponse as public so that it can be called in AtmosphereHandler to set the scope
+  //upon asynchronously being given requests from Atmosphere.
+  def withDynamicScope[A](request: HttpServletRequest, response: HttpServletResponse)(f: => A) = {
+    withRequestResponse(request, response)(f)
   }
 
   private[this] def noGetRoute = sys.error("You are using the AtmosphereSupport without defining any Get route," +

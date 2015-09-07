@@ -65,11 +65,11 @@ class ScalatraAtmosphereHandler(implicit wireFormat: WireFormat) extends Abstrac
 
   def onRequest(resource: AtmosphereResource) {
     val req = resource.getRequest
-    val route = Option(req.getAttribute(org.scalatra.atmosphere.AtmosphereRouteKey)).map(_.asInstanceOf[MatchedRoute])
+    val routeAndSupp = Option(req.getAttribute(org.scalatra.atmosphere.AtmosphereRouteKey)).map(_.asInstanceOf[(MatchedRoute, AtmosphereSupport)])
     var session = resource.session()
     val isNew = !session.contains(org.scalatra.atmosphere.AtmosphereClientKey)
 
-    (req.requestMethod, route.isDefined) match {
+    (req.requestMethod, routeAndSupp.isDefined) match {
       case (Post, _) =>
         var client: AtmosphereClient = null
         if (isNew) {
@@ -80,7 +80,8 @@ class ScalatraAtmosphereHandler(implicit wireFormat: WireFormat) extends Abstrac
         handleIncomingMessage(req, client)
       case (_, true) =>
         val cl = if (isNew) {
-          createClient(route.get, session, resource)
+          val (route, atmosphereSupport) = routeAndSupp.get
+          createClient(route, atmosphereSupport, session, resource)
         } else null
 
         addEventListener(resource)
@@ -95,19 +96,17 @@ class ScalatraAtmosphereHandler(implicit wireFormat: WireFormat) extends Abstrac
     }
   }
 
-  private[this] def createClient(route: MatchedRoute, session: HttpSession, resource: AtmosphereResource) = {
-    withRouteMultiParams(route, resource.getRequest) {
-      val client = clientForRoute(route)
-      session(org.scalatra.atmosphere.AtmosphereClientKey) = client
-      client.resource = resource
-      client
-    }
-  }
-  private[this] def createClient(route: MatchedRoute, resource: AtmosphereResource) = {
-    withRouteMultiParams(route, resource.getRequest) {
-      val client = clientForRoute(route)
-      client.resource = resource
-      client
+  private[this] def createClient(route: MatchedRoute, atmosphereSupport: AtmosphereSupport, session: HttpSession, resource: AtmosphereResource) = {
+    val req = resource.getRequest
+    val res = resource.getResponse
+    //Set the scope here so that the user DSL that implements route.action sees the proper request and response variables
+    atmosphereSupport.withDynamicScope(req, res) {
+      withRouteMultiParams(route, req) {
+        val client = clientForRoute(route)
+        session(org.scalatra.atmosphere.AtmosphereClientKey) = client
+        client.resource = resource
+        client
+      }
     }
   }
 
