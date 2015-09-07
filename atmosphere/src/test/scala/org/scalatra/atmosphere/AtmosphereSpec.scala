@@ -43,6 +43,22 @@ class AtmosphereSpecServlet(implicit override protected val scalatraActorSystem:
     }
   }
 
+  atmosphere("/:param1/test2/:param2") {
+    val param1 = params("param1")
+    val param2 = params("param2")
+    new AtmosphereClient {
+      def receive: AtmoReceive = {
+        case Connected =>
+          println("connected client, param1=" + param1 + " param2=" + param2)
+        case TextMessage(txt) =>
+          send("" + txt + param1 + param2)
+        case JsonMessage(_) => ()
+        case m =>
+          println("Got unknown message " + m.getClass + " " + m.toString)
+      }
+    }
+  }
+
   error {
     case t: Throwable => t.printStackTrace()
   }
@@ -141,6 +157,34 @@ class AtmosphereSpec extends MutableScalatraSpec {
       })
 
       socket.open(req.build()).fire("echo");
+
+      latch.await(5, TimeUnit.SECONDS) must beTrue
+    }
+
+    "allow path parameters in atmosphere routes" in {
+      val latch = new CountDownLatch(1)
+
+      val client: Client[DefaultOptions, DefaultOptionsBuilder, DefaultRequestBuilder] = ClientFactory.getDefault.newClient.asInstanceOf[Client[DefaultOptions, DefaultOptionsBuilder, DefaultRequestBuilder]]
+
+      val req = client.newRequestBuilder
+        .method(Request.METHOD.GET)
+        .uri(baseUrl + "/abc/test2/def")
+        .transport(Request.TRANSPORT.WEBSOCKET)
+
+      val opts = client.newOptionsBuilder().reconnect(false).build()
+
+      val socket = client.create(opts).on(Event.MESSAGE, new Function[String] {
+        def on(r: String) = {
+          assert(r == "echoabcdef")
+          latch.countDown()
+        }
+      }).on(new Function[Throwable] {
+        def on(t: Throwable) = {
+          t.printStackTrace
+        }
+      })
+
+      socket.open(req.build()).fire("echo")
 
       latch.await(5, TimeUnit.SECONDS) must beTrue
     }
